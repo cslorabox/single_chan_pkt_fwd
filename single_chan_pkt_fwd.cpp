@@ -60,8 +60,12 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#ifdef HAL_WIRING
 #include <wiringPi.h>
 #include <wiringPiSPI.h>
+#else
+#include <ll_ifc_transport_pc.h>
+#endif
 
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -235,6 +239,7 @@ void Die(const char *s)
   exit(1);
 }
 
+#ifdef HAL_WIRING
 void SelectReceiver()
 {
   digitalWrite(ssPin, LOW);
@@ -393,6 +398,7 @@ void SetupLoRa()
   WriteRegister(REG_LNA, LNA_MAX_GAIN);  // max lna gain
   WriteRegister(REG_OPMODE, SX72_MODE_RX_CONTINUOS);
 }
+#endif
 
 void SolveHostname(const char* p_hostname, uint16_t port, struct sockaddr_in* p_sin)
 {
@@ -518,14 +524,19 @@ void SendStat()
   SendUdp(status_report, stat_index + json.size());
 }
 
-bool Receivepacket()
+int foo() {
+  return -1;
+}
+
+#ifdef HAL_WIRING
+int Wiring_Receivepacket(char *message)
 {
   long int SNR;
   int rssicorr;
   bool ret = false;
 
   if (digitalRead(dio0) == 1) {
-    char message[256];
+    //    char message[256];
     uint8_t length = 0;
     if (ReceivePkt(message, &length)) {
       // OK got one
@@ -552,7 +563,29 @@ bool Receivepacket()
         printf("%c",isprint(c)?c:'.');
       }
       printf("'\n");
+      return length;
+    }
+  }
+  return 0;
+}
+#else
+//extern "C" int rx_mode_single(char *buf, bool discard);
+extern "C" int rx_mode_cont(uint32_t receive_time_ms, uint8_t has_freq_err, char * buf);
+extern "C" void ll_setup(char *tty, int sf, int freq);
+#endif
 
+bool Receivepacket()
+{
+  bool ret = false;
+  char message[256];
+  int length;
+  if (1) {
+#ifdef HAL_WIRING
+    length = WiringReceivepacket(message);
+#else
+    length = rx_mode_cont(60000, 0, message);
+#endif
+    if (length > 0) {
       char buff_up[TX_BUFF_SIZE]; /* buffer to compose the upstream packet */
       int buff_index = 0;
 
@@ -593,7 +626,7 @@ bool Receivepacket()
 
       // Encode payload.
       char b64[BASE64_MAX_LENGTH];
-      bin_to_b64((uint8_t*)message, length, b64, BASE64_MAX_LENGTH);
+      bin_to_b64((uint8_t*)message+3, length, b64, BASE64_MAX_LENGTH);
 
       // Build JSON object.
       StringBuffer sb;
@@ -621,9 +654,9 @@ bool Receivepacket()
       writer.String("codr");
       writer.String("4/5");
       writer.String("rssi");
-      writer.Int(ReadRegister(0x1A) - rssicorr);
+      writer.Int(*((int16_t *)&message[0]));
       writer.String("lsnr");
-      writer.Double(SNR); // %li.
+      writer.Double((int8_t)message[2] / 4.0);
       writer.String("size");
       writer.Uint(length);
       writer.String("data");
@@ -641,19 +674,25 @@ bool Receivepacket()
 
       fflush(stdout);
     }
+    else {
+      printf("length %d\rn", length);
+      exit(-1);
+    }
   }
   return ret;
 }
 
-int main()
+extern "C" int nomac_main(int argc, char **argv);
+int main(int argc, char **argv)
 {
+  if (argc > 1 && *argv[1] == '-')
+    return nomac_main(argc, argv);
   struct timeval nowtime;
   uint32_t lasttime;
   unsigned int led1_timer;
-
   LoadConfiguration("global_conf.json");
   PrintConfiguration();
-
+#ifdef HAL_WIRING
   // Init WiringPI
   wiringPiSetup() ;
   pinMode(ssPin, OUTPUT);
@@ -675,9 +714,16 @@ int main()
 
   // Init SPI
   wiringPiSPISetup(SPI_CHANNEL, 500000);
-
   // Setup LORA
   SetupLoRa();
+#else
+  if (argc < 2) {
+    fprintf(stderr, "must specify tty\r\n");
+    return -1;
+  }
+  ll_setup(argv[1], sf, freq);
+#endif
+
 
   // Prepare Socket connection
   if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
@@ -709,12 +755,13 @@ int main()
     // Packet received ?
     if (Receivepacket()) {
       // Led ON
+#ifdef HAL_WIRING
       if (Led1 != 0xff) {
         digitalWrite(Led1, 1);
       }
-
       // start our Led blink timer, LED as been lit in Receivepacket
       led1_timer=millis();
+#endif
     }
 
     gettimeofday(&nowtime, NULL);
@@ -727,6 +774,7 @@ int main()
       cp_up_pkt_fwd = 0;
     }
 
+#ifdef HAL_WIRING
     // Led timer in progress ?
     if (led1_timer) {
       // Led timer expiration, Blink duration is 250ms
@@ -743,6 +791,7 @@ int main()
 
     // Let some time to the OS
     delay(1);
+#endif
   }
 
   return (0);
