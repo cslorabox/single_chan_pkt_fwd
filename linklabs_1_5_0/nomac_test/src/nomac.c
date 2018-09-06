@@ -321,7 +321,7 @@ int rx_mode_single(char *buf, bool discard)
         {
             if (rx_payload_is_hex)
             {
-                printf("0x%02x ", rx_buf[c]);
+                printf("%02x", rx_buf[c]);
             }
             else
             {
@@ -450,7 +450,8 @@ int rx_mode_cont(uint32_t receive_time_ms, uint8_t has_freq_err,
             {
                 if (rx_payload_is_hex)
                 {
-                    printf("0x%02x ", rx_buf[c]);
+		  //printf("0x%02x ", rx_buf[c]);
+		    printf("%02x ", rx_buf[c]);
                 }
                 else
                 {
@@ -647,7 +648,10 @@ void ll_setup(char *tty, uint8_t sf, uint32_t freq) {
   print_ll_ifc_error("ll_spreading_factor_set", i32_ret);
   i32_ret = ll_frequency_set(freq);
   print_ll_ifc_error("ll_frequency_set", i32_ret);
-
+  i32_ret = ll_iq_inversion_set(0);
+  print_ll_ifc_error("ll_iq_inversion_set", i32_ret);
+  i32_ret = ll_bandwidth_set(1);
+  print_ll_ifc_error("ll_bandwidth_set", i32_ret);
         uint8_t cr, bw;
 	//  uint32_t freq;
         uint16_t preamble_len;

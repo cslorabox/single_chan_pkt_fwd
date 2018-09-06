@@ -572,6 +572,7 @@ int Wiring_Receivepacket(char *message)
 //extern "C" int rx_mode_single(char *buf, bool discard);
 extern "C" int rx_mode_cont(uint32_t receive_time_ms, uint8_t has_freq_err, char * buf);
 extern "C" void ll_setup(char *tty, int sf, int freq);
+extern "C" uint8_t rx_payload_is_hex;
 #endif
 
 bool Receivepacket()
@@ -579,11 +580,12 @@ bool Receivepacket()
   bool ret = false;
   char message[256];
   int length;
+
   if (1) {
 #ifdef HAL_WIRING
     length = WiringReceivepacket(message);
 #else
-    length = rx_mode_cont(60000, 0, message);
+    length = rx_mode_cont(0, 0, message);
 #endif
     if (length > 0) {
       char buff_up[TX_BUFF_SIZE]; /* buffer to compose the upstream packet */
@@ -687,6 +689,7 @@ int main(int argc, char **argv)
 {
   if (argc > 1 && *argv[1] == '-')
     return nomac_main(argc, argv);
+  rx_payload_is_hex = 1;
   struct timeval nowtime;
   uint32_t lasttime;
   unsigned int led1_timer;
